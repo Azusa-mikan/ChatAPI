@@ -11,22 +11,23 @@ const (
 )
 
 type TurnRequest struct {
-	Protocol         Protocol
-	ConversationID   string
-	Model            string
-	Stream           bool
-	SystemContent    string
-	DeveloperContent string
-	AssistantContent string
-	UserContent      string
-	LastUserContent  string
-	InputParts       []InputPart
-	ToolSchemas      []ToolSchema
-	BuiltinTools     []BuiltinTool
-	ToolChoice       ToolChoice
-	ResponseFormat   ResponseFormat
-	Options          TurnOptions
-	RawBody          map[string]any
+	Protocol           Protocol
+	ConversationID     string
+	PreviousResponseID string
+	Model              string
+	Stream             bool
+	SystemContent      string
+	DeveloperContent   string
+	AssistantContent   string
+	UserContent        string
+	LastUserContent    string
+	InputParts         []InputPart
+	ToolSchemas        []ToolSchema
+	BuiltinTools       []BuiltinTool
+	ToolChoice         ToolChoice
+	ResponseFormat     ResponseFormat
+	Options            TurnOptions
+	RawBody            map[string]any
 }
 
 type OutputSegment struct {
@@ -118,22 +119,23 @@ func ParseRequest(protocolValue string, body map[string]any) TurnRequest {
 	proto := ParseProtocol(protocolValue)
 	inputParts := extractRequestInputParts(proto, body)
 	return TurnRequest{
-		Protocol:         proto,
-		ConversationID:   stringValue(body["conversation_id"], ""),
-		Model:            stringValue(body["model"], "chatapi-lab"),
-		Stream:           boolValue(body["stream"]),
-		SystemContent:    extractRequestRoleContent(proto, body, "system"),
-		DeveloperContent: extractRequestRoleContent(proto, body, "developer"),
-		AssistantContent: extractRequestRoleContent(proto, body, "assistant"),
-		UserContent:      joinInputPartText(inputParts),
-		LastUserContent:  extractLastUserContent(proto, body),
-		InputParts:       inputParts,
-		ToolSchemas:      extractToolSchemas(body),
-		BuiltinTools:     extractBuiltinTools(proto, body),
-		ToolChoice:       extractToolChoice(body),
-		ResponseFormat:   extractResponseFormat(body),
-		Options:          extractTurnOptions(proto, body),
-		RawBody:          cloneAnyMap(body),
+		Protocol:           proto,
+		ConversationID:     stringValue(body["conversation_id"], ""),
+		PreviousResponseID: stringValue(body["previous_response_id"], ""),
+		Model:              stringValue(body["model"], "chatapi-lab"),
+		Stream:             boolValue(body["stream"]),
+		SystemContent:      extractRequestRoleContent(proto, body, "system"),
+		DeveloperContent:   extractRequestRoleContent(proto, body, "developer"),
+		AssistantContent:   extractRequestRoleContent(proto, body, "assistant"),
+		UserContent:        joinInputPartText(inputParts),
+		LastUserContent:    extractLastUserContent(proto, body),
+		InputParts:         inputParts,
+		ToolSchemas:        extractToolSchemas(body),
+		BuiltinTools:       extractBuiltinTools(proto, body),
+		ToolChoice:         extractToolChoice(body),
+		ResponseFormat:     extractResponseFormat(body),
+		Options:            extractTurnOptions(proto, body),
+		RawBody:            cloneAnyMap(body),
 	}
 }
 

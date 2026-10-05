@@ -14,6 +14,7 @@ type Reader interface {
 	ListConversationsForOwnerPage(context.Context, string, time.Time, string, int) ([]common.Conversation, error)
 	GetConversation(context.Context, string) (common.Conversation, error)
 	FindConversationByToolCallID(context.Context, string, string) (common.Conversation, error)
+	FindConversationByResponseID(context.Context, string, string) (common.Conversation, error)
 	ListRequests(context.Context) ([]common.Request, error)
 	GetRequest(context.Context, string) (common.Request, error)
 	GetLatestRequestForConversation(context.Context, string) (common.Request, error)

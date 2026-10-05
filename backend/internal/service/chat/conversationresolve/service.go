@@ -2,6 +2,7 @@ package conversationresolve
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/zyf2007/ChatAPI/internal/protocol"
@@ -48,6 +49,24 @@ func (s *Service) Resolve(ctx context.Context, input ResolveInput) (Target, erro
 			return Target{}, common.ErrTurnConflict
 		}
 		return Target{ConversationID: conversationID, Reuse: true, Source: "explicit_id"}, nil
+	}
+	// Responses API continuity: previous_response_id identifies the prior turn.
+	// Reuse its conversation so stateless "continue" calls don't spawn a new one.
+	// Only the Responses protocol defines this field.
+	if input.Request.Protocol == protocol.ProtocolResponses {
+		if responseID := strings.TrimSpace(input.Request.PreviousResponseID); responseID != "" {
+			conversation, err := s.Store.FindConversationByResponseID(ctx, ownerID, responseID)
+			if err != nil {
+				if errors.Is(err, common.ErrNotFound) {
+					return Target{}, common.ErrNotFound
+				}
+				return Target{}, err
+			}
+			if !protocolCompatible(conversation, input.Request.Protocol.String()) {
+				return Target{}, common.ErrTurnConflict
+			}
+			return Target{ConversationID: conversation.ID, Reuse: true, Source: "previous_response_id"}, nil
+		}
 	}
 	for _, toolCallID := range extractToolCallIDs(input.Request.InputParts) {
 		if s.Pending != nil {

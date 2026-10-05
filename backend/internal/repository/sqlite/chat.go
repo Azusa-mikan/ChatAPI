@@ -197,6 +197,44 @@ func (s *Store) FindConversationByToolCallID(ctx context.Context, ownerID string
 	return item, nil
 }
 
+func (s *Store) FindConversationByResponseID(ctx context.Context, ownerID string, responseID string) (common.Conversation, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT c.id, c.title, c.created_at, c.updated_at, c.last_message_at, c.message_count, c.last_message_preview, c.last_user_text, c.metadata_json, COALESCE(json_extract(c.metadata_json, '$.response_id'), '')
+		FROM conversations c
+		JOIN messages m ON m.conversation_id = c.id
+		WHERE json_extract(c.metadata_json, '$.owner_id') = ?
+			AND COALESCE(m.response_id, '') = ?
+		ORDER BY m.created_at DESC, m.id DESC
+		LIMIT 1
+	`, strings.TrimSpace(ownerID), strings.TrimSpace(responseID))
+
+	var item common.Conversation
+	var createdAt, updatedAt, lastMessageAt string
+	var metadataJSON string
+	if err := row.Scan(
+		&item.ID,
+		&item.Title,
+		&createdAt,
+		&updatedAt,
+		&lastMessageAt,
+		&item.MessageCount,
+		&item.LastMessagePreview,
+		&item.LastUserText,
+		&metadataJSON,
+		&item.ResponseID,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return common.Conversation{}, errNotFound
+		}
+		return common.Conversation{}, err
+	}
+	item.CreatedAt = parseTime(createdAt)
+	item.UpdatedAt = parseTime(updatedAt)
+	item.LastMessageAt = parseTime(lastMessageAt)
+	item.Metadata = parseJSONMap(metadataJSON)
+	return item, nil
+}
+
 func (s *Store) ListRequests(ctx context.Context) ([]common.Request, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT

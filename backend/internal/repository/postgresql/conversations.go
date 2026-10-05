@@ -122,6 +122,18 @@ func (s *Store) FindConversationByToolCallID(ctx context.Context, ownerID string
 	`, strings.TrimSpace(ownerID), strings.TrimSpace(toolCallID)))
 }
 
+func (s *Store) FindConversationByResponseID(ctx context.Context, ownerID string, responseID string) (common.Conversation, error) {
+	return scanConversation(s.pool.QueryRow(ctx, `
+		SELECT c.id, c.title, c.created_at, c.updated_at, c.last_message_at, c.message_count, c.last_message_preview, c.last_user_text, c.metadata_json, COALESCE(c.metadata_json->>'response_id', '')
+		FROM conversations c
+		JOIN messages m ON m.conversation_id = c.id
+		WHERE COALESCE(c.metadata_json->>'owner_id', '') = $1
+			AND COALESCE(m.response_id, '') = $2
+		ORDER BY m.created_at DESC, m.id DESC
+		LIMIT 1
+	`, strings.TrimSpace(ownerID), strings.TrimSpace(responseID)))
+}
+
 func (s *Store) ListRequests(ctx context.Context) ([]common.Request, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT

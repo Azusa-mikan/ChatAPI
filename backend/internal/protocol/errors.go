@@ -1,8 +1,11 @@
 package protocol
 
 import (
+	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/zyf2007/ChatAPI/internal/repository/common"
 )
 
 type RequestError struct {
@@ -191,8 +194,24 @@ func BuildErrorBody(protocolValue string, err error) map[string]any {
 }
 
 func normalizeRequestError(err error) *RequestError {
-	if typed, ok := err.(*RequestError); ok && typed != nil {
+	if typed, ok := err.(*RequestError); ok && typed != nil && typed.StatusCode > 0 {
 		return typed
+	}
+	switch {
+	case errors.Is(err, common.ErrNotFound):
+		return &RequestError{
+			StatusCode: 404,
+			Type:       "invalid_request_error",
+			Code:       "not_found",
+			Message:    "conversation not found for the given id or previous_response_id",
+		}
+	case errors.Is(err, common.ErrTurnConflict):
+		return &RequestError{
+			StatusCode: 409,
+			Type:       "invalid_request_error",
+			Code:       "conversation_conflict",
+			Message:    "conversation belongs to a different request format or is otherwise incompatible",
+		}
 	}
 	message := "internal server error"
 	if err != nil {
@@ -207,10 +226,7 @@ func normalizeRequestError(err error) *RequestError {
 }
 
 func HTTPStatus(err error) int {
-	if typed, ok := err.(*RequestError); ok && typed != nil && typed.StatusCode > 0 {
-		return typed.StatusCode
-	}
-	return 500
+	return normalizeRequestError(err).StatusCode
 }
 
 func AbortError(protocolValue string, reason string) map[string]any {

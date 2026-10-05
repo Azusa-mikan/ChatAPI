@@ -110,6 +110,9 @@ func RunConversationRepositoryTests(t *testing.T, newStore NewStoreFunc) {
 	t.Run("conversation_retention", func(t *testing.T) {
 		testConversationRepositoryRetention(t, newStore)
 	})
+	t.Run("find_conversation_by_response_id", func(t *testing.T) {
+		testConversationRepositoryFindByResponseID(t, newStore)
+	})
 }
 
 func testConversationRepositoryRetention(t *testing.T, newStore NewStoreFunc) {
@@ -206,6 +209,40 @@ func testConversationRepositoryOwnerPages(t *testing.T, newStore NewStoreFunc) {
 	}
 	if len(second) != 1 || second[0].ID == first[0].ID || second[0].ID == first[1].ID {
 		t.Fatalf("unexpected second owner page: %#v", second)
+	}
+}
+
+func testConversationRepositoryFindByResponseID(t *testing.T, newStore NewStoreFunc) {
+	st := newStore(t)
+	ctx := context.Background()
+
+	if _, _, err := st.CreatePendingTurn(ctx, common.CreatePendingInput{
+		ConversationID: "conv_resp_lookup",
+		RequestID:      "req_resp_lookup",
+		ResponseID:     "resp_lookup_1",
+		OwnerID:        "user_a",
+		RequestFormat:  "responses",
+		UserContent:    "hi",
+	}); err != nil {
+		t.Fatalf("create pending turn: %v", err)
+	}
+
+	found, err := st.FindConversationByResponseID(ctx, "user_a", "resp_lookup_1")
+	if err != nil {
+		t.Fatalf("find by response id: %v", err)
+	}
+	if found.ID != "conv_resp_lookup" {
+		t.Fatalf("unexpected conversation: %#v", found)
+	}
+
+	// Owner isolation: another owner must not resolve the same response id.
+	if _, err := st.FindConversationByResponseID(ctx, "user_b", "resp_lookup_1"); !errors.Is(err, common.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for other owner, got %v", err)
+	}
+
+	// Unknown response id resolves to not found.
+	if _, err := st.FindConversationByResponseID(ctx, "user_a", "resp_missing"); !errors.Is(err, common.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for missing response id, got %v", err)
 	}
 }
 

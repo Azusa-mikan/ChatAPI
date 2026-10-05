@@ -185,19 +185,20 @@ func providerExtras(proto Protocol, body map[string]any) map[string]any {
 
 func knownRequestKeys(proto Protocol) map[string]bool {
 	keys := map[string]bool{
-		"model":               true,
-		"stream":              true,
-		"conversation_id":     true,
-		"tools":               true,
-		"tool_choice":         true,
-		"response_format":     true,
-		"metadata":            true,
-		"temperature":         true,
-		"top_p":               true,
-		"user":                true,
-		"stream_options":      true,
-		"parallel_tool_calls": true,
-		"service_tier":        true,
+		"model":                true,
+		"stream":               true,
+		"conversation_id":      true,
+		"previous_response_id": true,
+		"tools":                true,
+		"tool_choice":          true,
+		"response_format":      true,
+		"metadata":             true,
+		"temperature":          true,
+		"top_p":                true,
+		"user":                 true,
+		"stream_options":       true,
+		"parallel_tool_calls":  true,
+		"service_tier":         true,
 	}
 	switch proto {
 	case ProtocolChatCompletions:

@@ -270,13 +270,17 @@ func TestRouterUserFlow(t *testing.T) {
 		t.Fatalf("unexpected initial user config: %#v", configResp)
 	}
 	configResp = postJSONWithCookie(t, server.URL+"/api/user/config", map[string]any{
-		"ntfy_url_enabled":                  true,
-		"ntfy_url":                          "https://ntfy.sh/alice",
+		"webhook_url_enabled":               true,
+		"webhook_url":                       "https://webhook.sh/alice",
+		"webhook_body_template":             `{"msg_type":"text","content":{"text":"{{title}}\n{{text}}"}}`,
 		"messages_per_minute_limit_enabled": true,
 		"messages_per_minute_limit":         3,
 	}, userCookie, http.StatusOK)
-	if configResp["ntfy_url"] != "https://ntfy.sh/alice" {
+	if configResp["webhook_url"] != "https://webhook.sh/alice" {
 		t.Fatalf("unexpected saved user config: %#v", configResp)
+	}
+	if configResp["webhook_body_template"] != `{"msg_type":"text","content":{"text":"{{title}}\n{{text}}"}}` {
+		t.Fatalf("unexpected saved body template: %#v", configResp)
 	}
 
 	rulesResp := getJSONWithCookie(t, server.URL+"/api/automation/rules", userCookie, http.StatusOK)

@@ -227,7 +227,7 @@ func (h UserHandler) SetConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	item, err := h.UserControl.Config.UpdateUserConfig(r.Context(), pr.UserID, body)
 	if err != nil {
-		if errors.Is(err, usercontrolconfig.ErrInvalidNtfyConfig) {
+		if errors.Is(err, usercontrolconfig.ErrInvalidWebhookConfig) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}

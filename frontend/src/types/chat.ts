@@ -90,8 +90,9 @@ export type ApiKeyListResponse = {
 }
 
 export type UserConfig = {
-  ntfy_url_enabled: boolean
-  ntfy_url: string
+  webhook_url_enabled: boolean
+  webhook_url: string
+  webhook_body_template: string
   messages_per_minute_limit_enabled: boolean
   messages_per_minute_limit: number
 }

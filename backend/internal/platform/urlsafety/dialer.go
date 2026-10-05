@@ -14,10 +14,10 @@ import (
 
 // ErrRestrictedAddress is returned when resolution yields any restricted address
 // (fail-closed mixed DNS) or when dial-time resolution drifts into a restricted target.
-var ErrRestrictedAddress = errors.New("ntfy destination address is restricted")
+var ErrRestrictedAddress = errors.New("webhook destination address is restricted")
 
 // ErrNoSafeAddress is returned when resolution yields no dialable public address.
-var ErrNoSafeAddress = errors.New("ntfy destination has no safe address")
+var ErrNoSafeAddress = errors.New("webhook destination has no safe address")
 
 // DialFunc dials a concrete network address (typically "ip:port").
 type DialFunc func(ctx context.Context, network, address string) (net.Conn, error)
@@ -112,7 +112,7 @@ func (d *SafeDialer) DialContext(ctx context.Context, network, address string) (
 // NewSafeHTTPClient builds an HTTP client that re-validates destinations at dial time.
 //
 // Redirect policy: redirects are not followed. Following a Location would require
-// equal host/IP safety checks on every hop; ntfy push endpoints should respond
+// equal host/IP safety checks on every hop; webhook push endpoints should respond
 // in-place, so blocking redirects is the simpler closed boundary.
 func NewSafeHTTPClient(timeout time.Duration, dialer *SafeDialer) *http.Client {
 	if timeout <= 0 {
@@ -145,7 +145,7 @@ func NewSafeHTTPClient(timeout time.Duration, dialer *SafeDialer) *http.Client {
 }
 
 // FilterPublicAddresses returns only non-restricted addresses from a resolved set.
-// Prefer fail-closed AssessNtfyHost / SafeDialer for policy decisions; this helper
+// Prefer fail-closed AssessWebhookHost / SafeDialer for policy decisions; this helper
 // is for callers that explicitly want the public subset after a separate check.
 func FilterPublicAddresses(addresses []netip.Addr, allowPrivate bool) []netip.Addr {
 	out := make([]netip.Addr, 0, len(addresses))

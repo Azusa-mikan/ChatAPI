@@ -17,7 +17,7 @@ import (
 	"github.com/zyf2007/ChatAPI/internal/ops/setup"
 	"github.com/zyf2007/ChatAPI/internal/platform/media"
 	"github.com/zyf2007/ChatAPI/internal/platform/media/localstore"
-	platformntfy "github.com/zyf2007/ChatAPI/internal/platform/ntfy"
+	platformwebhook "github.com/zyf2007/ChatAPI/internal/platform/webhook"
 	"github.com/zyf2007/ChatAPI/internal/service/account"
 	"github.com/zyf2007/ChatAPI/internal/service/admincontrol"
 	adminmonitoring "github.com/zyf2007/ChatAPI/internal/service/admincontrol/monitoring"
@@ -57,7 +57,7 @@ import (
 	turnquerysvc "github.com/zyf2007/ChatAPI/internal/service/chat/turnquery"
 	workspacesvc "github.com/zyf2007/ChatAPI/internal/service/chat/workspace"
 	workspacesettings "github.com/zyf2007/ChatAPI/internal/service/chat/workspace/settings"
-	ntfynotify "github.com/zyf2007/ChatAPI/internal/service/notification/ntfy"
+	webhooknotify "github.com/zyf2007/ChatAPI/internal/service/notification/webhook"
 	"github.com/zyf2007/ChatAPI/internal/service/usercontrol"
 	"github.com/zyf2007/ChatAPI/internal/service/usercontrol/conversationretention"
 )
@@ -78,7 +78,7 @@ type applicationInput struct {
 type applicationResult struct {
 	router        httprouter.Deps
 	services      Services
-	notifications *ntfynotify.Service
+	notifications *webhooknotify.Service
 }
 
 type authModule struct {
@@ -116,7 +116,7 @@ type chatModule struct {
 	workspaceHub       *workspacesvc.Hub
 	events             *chatevents.Dispatcher
 	automation         *automationsvc.Service
-	notifications      *ntfynotify.Service
+	notifications      *webhooknotify.Service
 	outputUploader     httphandler.OutputImageUploader
 }
 
@@ -182,7 +182,7 @@ func buildChatModule(input applicationInput, auth authModule) chatModule {
 	settings := chatsettings.New(store, cfg)
 	pending := pendingsvc.NewPendingRegistry()
 	pending.Logger = logger(logging.LayerPending)
-	notifications := ntfynotify.New(store, platformntfy.NewClient(nil), logger(logging.LayerApp))
+	notifications := webhooknotify.New(store, platformwebhook.NewClient(nil), logger(logging.LayerApp))
 	submitter := &turnsvc.Submitter{Store: store, Pending: pending, OutputEventLimit: func(ctx context.Context) (int, error) {
 		current, err := settings.Current(ctx)
 		return current.MaxOutputEventsPerMessage, err

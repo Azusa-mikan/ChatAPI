@@ -1338,6 +1338,24 @@
   width: 100%;
 }
 
+.webhook-field-stack {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+}
+
+.webhook-field-hint,
+.webhook-row-help {
+  color: var(--app-text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.webhook-field-hint code,
+.webhook-row-help code {
+  font-family: "SF Mono", SFMono-Regular, Consolas, monospace;
+}
+
 .system-settings-footer {
   display: flex;
   align-items: center;

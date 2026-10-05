@@ -12,7 +12,7 @@ import (
 
 // Prove that a slow NotifyWaiting hook cannot delay the pending publish path.
 // Submit must return as soon as the hook returns; the hook itself must not do
-// blocking I/O in production (ntfy service enqueues only). This test also
+// blocking I/O in production (webhook service enqueues only). This test also
 // guards against future accidental re-introduction of synchronous slow work
 // inside the hook call site.
 func TestSubmit_NotifyWaitingDoesNotDelayPendingReturn(t *testing.T) {
@@ -78,7 +78,7 @@ func TestSubmit_SlowBlockingNotifyDelaysSubmit_DocumentedContract(t *testing.T) 
 	// Documents the contract: Submit calls NotifyWaiting synchronously.
 	// Therefore production NotifyWaiting MUST only enqueue. If someone wires a
 	// blocking sender directly, Submit latency follows the sender — which is
-	// the bug PR #37 introduced. This test freezes that contract so the ntfy
+	// the bug PR #37 introduced. This test freezes that contract so the webhook
 	// service layer remains responsible for asynchrony.
 	block := make(chan struct{})
 	submitter := &Submitter{

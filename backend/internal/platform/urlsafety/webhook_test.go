@@ -7,10 +7,10 @@ import (
 	"testing"
 )
 
-func TestValidateNtfyURL(t *testing.T) {
+func TestValidateWebhookURL(t *testing.T) {
 	publicLookup := HostLookup(func(ctx context.Context, host string) ([]netip.Addr, error) {
 		switch host {
-		case "ntfy.sh", "example.com":
+		case "webhook.sh", "example.com":
 			return []netip.Addr{netip.MustParseAddr("1.2.3.4")}, nil
 		case "private.example":
 			return []netip.Addr{netip.MustParseAddr("10.0.0.5")}, nil
@@ -32,7 +32,7 @@ func TestValidateNtfyURL(t *testing.T) {
 		wantPrivate  bool
 	}{
 		{name: "empty", url: "", wantOK: true},
-		{name: "https_public", url: "https://ntfy.sh/topic", wantOK: true},
+		{name: "https_public", url: "https://webhook.sh/topic", wantOK: true},
 		{name: "private_ipv4_blocked", url: "http://127.0.0.1/topic", wantOK: false, wantPrivate: true},
 		{name: "private_ipv4_allowed", url: "http://127.0.0.1/topic", allowPrivate: true, wantOK: true, wantPrivate: true},
 		{name: "localhost_blocked", url: "http://localhost/topic", wantOK: false, wantPrivate: true},
@@ -52,13 +52,13 @@ func TestValidateNtfyURL(t *testing.T) {
 		{name: "ietf_protocol_assignments", url: "http://192.0.0.1/topic", wantOK: false, wantPrivate: true},
 		{name: "reserved_240", url: "http://240.0.0.1/topic", wantOK: false, wantPrivate: true},
 		{name: "doc_v6", url: "http://[2001:db8::1]/topic", wantOK: false, wantPrivate: true},
-		{name: "userinfo_rejected", url: "https://user:pass@ntfy.sh/topic", wantOK: false},
-		{name: "fragment_rejected", url: "https://ntfy.sh/topic#frag", wantOK: false},
-		{name: "opaque_rejected", url: "https:ntfy.sh/topic", wantOK: false},
+		{name: "userinfo_rejected", url: "https://user:pass@webhook.sh/topic", wantOK: false},
+		{name: "fragment_rejected", url: "https://webhook.sh/topic#frag", wantOK: false},
+		{name: "opaque_rejected", url: "https:webhook.sh/topic", wantOK: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ValidateNtfyURLContext(context.Background(), tc.url, tc.allowPrivate, publicLookup)
+			got := ValidateWebhookURLContext(context.Background(), tc.url, tc.allowPrivate, publicLookup)
 			if got.OK != tc.wantOK || got.IsPrivate != tc.wantPrivate {
 				t.Fatalf("unexpected validation result: %#v", got)
 			}
@@ -66,29 +66,29 @@ func TestValidateNtfyURL(t *testing.T) {
 	}
 }
 
-func TestParseNtfyURL_DefaultsPort(t *testing.T) {
-	parsed, result := ParseNtfyURL("https://ntfy.sh/my-topic")
+func TestParseWebhookURL_DefaultsPort(t *testing.T) {
+	parsed, result := ParseWebhookURL("https://webhook.sh/my-topic")
 	if !result.OK || parsed == nil {
 		t.Fatalf("parse failed: %#v", result)
 	}
-	if parsed.Port != "443" || parsed.Hostname != "ntfy.sh" || parsed.Scheme != "https" {
+	if parsed.Port != "443" || parsed.Hostname != "webhook.sh" || parsed.Scheme != "https" {
 		t.Fatalf("unexpected parsed url: %#v", parsed)
 	}
 }
 
-func TestParseNtfyURL_RejectsUserinfoAndFragment(t *testing.T) {
+func TestParseWebhookURL_RejectsUserinfoAndFragment(t *testing.T) {
 	cases := []struct {
 		name string
 		raw  string
 	}{
-		{name: "user", raw: "https://alice@ntfy.sh/topic"},
-		{name: "user_pass", raw: "https://alice:secret@ntfy.sh/topic"},
-		{name: "fragment", raw: "https://ntfy.sh/topic#section"},
+		{name: "user", raw: "https://alice@webhook.sh/topic"},
+		{name: "user_pass", raw: "https://alice:secret@webhook.sh/topic"},
+		{name: "fragment", raw: "https://webhook.sh/topic#section"},
 		{name: "opaque", raw: "https:example.com/topic"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			parsed, result := ParseNtfyURL(tc.raw)
+			parsed, result := ParseWebhookURL(tc.raw)
 			if result.OK || parsed != nil {
 				t.Fatalf("expected rejection, got parsed=%#v result=%#v", parsed, result)
 			}
@@ -96,8 +96,8 @@ func TestParseNtfyURL_RejectsUserinfoAndFragment(t *testing.T) {
 	}
 }
 
-func TestParseNtfyURL_AllowsEmptyPathAndNonDefaultPort(t *testing.T) {
-	parsed, result := ParseNtfyURL("http://example.com:2586")
+func TestParseWebhookURL_AllowsEmptyPathAndNonDefaultPort(t *testing.T) {
+	parsed, result := ParseWebhookURL("http://example.com:2586")
 	if !result.OK || parsed == nil {
 		t.Fatalf("parse failed: %#v", result)
 	}
@@ -151,19 +151,19 @@ func TestIsRestrictedAddr_SpecialPurposeRanges(t *testing.T) {
 	}
 }
 
-func TestAssessNtfyHost_MixedDNSFailClosed(t *testing.T) {
+func TestAssessWebhookHost_MixedDNSFailClosed(t *testing.T) {
 	lookup := HostLookup(func(ctx context.Context, host string) ([]netip.Addr, error) {
 		return []netip.Addr{
 			netip.MustParseAddr("8.8.8.8"),
 			netip.MustParseAddr("10.1.2.3"),
 		}, nil
 	})
-	got := AssessNtfyHost(context.Background(), "mixed.example", false, lookup)
+	got := AssessWebhookHost(context.Background(), "mixed.example", false, lookup)
 	if got.OK || !got.IsPrivate {
 		t.Fatalf("expected fail-closed mixed DNS, got %#v", got)
 	}
 	// allowPrivate still marks IsPrivate but accepts for lab/test paths.
-	got = AssessNtfyHost(context.Background(), "mixed.example", true, lookup)
+	got = AssessWebhookHost(context.Background(), "mixed.example", true, lookup)
 	if !got.OK || !got.IsPrivate {
 		t.Fatalf("expected allowPrivate mixed DNS ok, got %#v", got)
 	}

@@ -16,7 +16,7 @@ Default features:
 - Support for three API interfaces: `/v1/chat/completions`, `/v1/responses`, `/messages`
 - Conversation list and message persistence for debugging and context inspection
 - Automated reply output, supports scheduled streaming, loop output, conditional auto-reply, etc.
-- Optional ntfy message push
+- Optional webhook message push
 
 ## 1. Deployment
 ### Single-binary build
@@ -121,7 +121,7 @@ CHATAPI_PORT=5000
 CHATAPI_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ```
 
-After logging in, you can enable and save `API Key`, site title, ntfy address, rate limiting, and TOTP in "System Settings"; these no longer need to be placed in `.env`.
+After logging in, you can enable and save `API Key`, site title, webhook address, rate limiting, and TOTP in "System Settings"; these no longer need to be placed in `.env`.
 
 Optional configuration:
 
@@ -226,7 +226,7 @@ CHATAPI_PORT=5000
 CHATAPI_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ```
 
-After logging in, you can enable and save `API Key`, site title, ntfy address, rate limiting, and TOTP in "System Settings"; these no longer need to be placed in `.env`.
+After logging in, you can enable and save `API Key`, site title, webhook address, rate limiting, and TOTP in "System Settings"; these no longer need to be placed in `.env`.
 
 Optional configuration:
 
@@ -374,19 +374,32 @@ tar xzf ngrok-v3-stable-linux-arm64.tgz
 
 #### 8.3 Sensitive information management
 
-1. After login, enable and save API Key, site title, ntfy address, and TOTP in the web console; these configurations should not be placed in the .env file
+1. After login, enable and save API Key, site title, webhook address, and TOTP in the web console; these configurations should not be placed in the .env file
 
 2. If SESSION_SECRET is not provided, the backend will auto-generate it on first start and write it to the database config table
 
 ## Message Push URL Security Settings
 
-ChatAPI supports sending message notifications via ntfy. Users can enter an ntfy push URL in "My Settings".
+ChatAPI supports sending message notifications via a generic webhook. Users can enter a webhook push URL in "My Settings". The notification is sent as an HTTP `POST` with `Content-Type: application/json`.
+
+By default the body is `{"title": "...", "text": "..."}`. You can override it with a JSON body template that uses two placeholders:
+
+- `{{title}}` — the message title (e.g. `ChatAPI · <conversation title>`)
+- `{{text}}` — the message body (the last user message)
+
+Placeholders must be placed **inside JSON string quotes**; values are JSON-escaped automatically when substituted. The rendered result must be valid JSON, otherwise saving is rejected. For example, a Feishu/Lark-style template:
+
+```json
+{"msg_type":"text","content":{"text":"{{title}}\n{{text}}"}}
+```
+
+Leave the template empty to keep the default `{"title", "text"}` body.
 
 ### Q: When do I need to modify the "Message Push URL"?
 
-In most cases, leaving it as the default "Disabled" is sufficient. Only enable it when you self-host ntfy on the same machine, same internal network, or a private network as ChatAPI, for example: `http://127.0.0.1:8080/topic` or `http://192.168.1.10:8080/topic`.
+In most cases, leaving it as the default "Disabled" is sufficient. Only enable it when you point the webhook at the same machine, same internal network, or a private network as ChatAPI, for example: `http://127.0.0.1:8080/webhook` or `http://192.168.1.10:8080/webhook`.
 
-If you use the official `https://ntfy.sh/your-topic`, or a self‑hosted ntfy with a public domain name (e.g., `https://ntfy.example.com/topic`), you do not need to change this setting.
+If your webhook endpoint uses a public domain name (e.g., `https://hooks.example.com/notify`), you do not need to change this setting.
 
 Meaning of the three options:
 

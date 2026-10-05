@@ -1,4 +1,4 @@
-package ntfy_test
+package webhook_test
 
 import (
 	"context"
@@ -9,19 +9,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zyf2007/ChatAPI/internal/platform/ntfy"
 	"github.com/zyf2007/ChatAPI/internal/platform/urlsafety"
+	"github.com/zyf2007/ChatAPI/internal/platform/webhook"
 	"github.com/zyf2007/ChatAPI/internal/repository/common"
 	configrepo "github.com/zyf2007/ChatAPI/internal/repository/config"
-	ntfynotify "github.com/zyf2007/ChatAPI/internal/service/notification/ntfy"
+	webhooknotify "github.com/zyf2007/ChatAPI/internal/service/notification/webhook"
 )
 
 func publicLookup(ctx context.Context, host string) ([]netip.Addr, error) {
 	return []netip.Addr{netip.MustParseAddr("1.2.3.4")}, nil
 }
 
-func testOptions(workers, queue int) ntfynotify.Options {
-	return ntfynotify.Options{
+func testOptions(workers, queue int) webhooknotify.Options {
+	return webhooknotify.Options{
 		Workers:   workers,
 		QueueSize: queue,
 		Lookup:    urlsafety.HostLookup(publicLookup),
@@ -32,15 +32,15 @@ func TestNotifyWaiting_DisabledOrMissingDoesNotSend(t *testing.T) {
 	sender := &recordingSender{}
 	store := &configStoreStub{configs: map[string]common.UserConfig{
 		"disabled": {UserID: "disabled", Key: "settings", Value: map[string]any{
-			"ntfy_url_enabled": false,
-			"ntfy_url":         "https://ntfy.sh/topic",
+			"webhook_url_enabled": false,
+			"webhook_url":         "https://webhook.sh/topic",
 		}},
 		"empty": {UserID: "empty", Key: "settings", Value: map[string]any{
-			"ntfy_url_enabled": true,
-			"ntfy_url":         "",
+			"webhook_url_enabled": true,
+			"webhook_url":         "",
 		}},
 	}}
-	svc := ntfynotify.NewWithOptions(store, sender, nil, testOptions(1, 4))
+	svc := webhooknotify.NewWithOptions(store, sender, nil, testOptions(1, 4))
 	t.Cleanup(func() { _ = svc.Close() })
 
 	svc.NotifyWaiting(context.Background(), "missing", "title", "hello")
@@ -56,18 +56,18 @@ func TestNotifyWaiting_SendsOnceWithTitleAndBody(t *testing.T) {
 	sender := &recordingSender{}
 	store := &configStoreStub{configs: map[string]common.UserConfig{
 		"user_a": {UserID: "user_a", Key: "settings", Value: map[string]any{
-			"ntfy_url_enabled": true,
-			"ntfy_url":         "https://ntfy.sh/alice",
+			"webhook_url_enabled": true,
+			"webhook_url":         "https://webhook.sh/alice",
 		}},
 	}}
-	svc := ntfynotify.NewWithOptions(store, sender, nil, testOptions(1, 4))
+	svc := webhooknotify.NewWithOptions(store, sender, nil, testOptions(1, 4))
 	t.Cleanup(func() { _ = svc.Close() })
 
 	svc.NotifyWaiting(context.Background(), "user_a", "会话标题", "最后用户内容")
 	waitFor(t, time.Second, func() bool { return sender.count() == 1 })
 
 	msg := sender.last()
-	if msg.URL != "https://ntfy.sh/alice" {
+	if msg.URL != "https://webhook.sh/alice" {
 		t.Fatalf("unexpected url: %#v", msg)
 	}
 	if msg.Title != "ChatAPI · 会话标题" {
@@ -82,11 +82,11 @@ func TestNotifyWaiting_DefaultBodyWhenUserTextEmpty(t *testing.T) {
 	sender := &recordingSender{}
 	store := &configStoreStub{configs: map[string]common.UserConfig{
 		"user_a": {UserID: "user_a", Key: "settings", Value: map[string]any{
-			"ntfy_url_enabled": true,
-			"ntfy_url":         "https://ntfy.sh/alice",
+			"webhook_url_enabled": true,
+			"webhook_url":         "https://webhook.sh/alice",
 		}},
 	}}
-	svc := ntfynotify.NewWithOptions(store, sender, nil, testOptions(1, 2))
+	svc := webhooknotify.NewWithOptions(store, sender, nil, testOptions(1, 2))
 	t.Cleanup(func() { _ = svc.Close() })
 
 	svc.NotifyWaiting(context.Background(), "user_a", "", "")
@@ -100,17 +100,37 @@ func TestNotifyWaiting_DefaultBodyWhenUserTextEmpty(t *testing.T) {
 	}
 }
 
+func TestNotifyWaiting_PassesBodyTemplate(t *testing.T) {
+	sender := &recordingSender{}
+	template := `{"msg_type":"text","content":{"text":"{{title}}\n{{text}}"}}`
+	store := &configStoreStub{configs: map[string]common.UserConfig{
+		"user_a": {UserID: "user_a", Key: "settings", Value: map[string]any{
+			"webhook_url_enabled":   true,
+			"webhook_url":           "https://webhook.sh/alice",
+			"webhook_body_template": template,
+		}},
+	}}
+	svc := webhooknotify.NewWithOptions(store, sender, nil, testOptions(1, 2))
+	t.Cleanup(func() { _ = svc.Close() })
+
+	svc.NotifyWaiting(context.Background(), "user_a", "会话标题", "最后用户内容")
+	waitFor(t, time.Second, func() bool { return sender.count() == 1 })
+	if got := sender.last().BodyTemplate; got != template {
+		t.Fatalf("unexpected body template: %q", got)
+	}
+}
+
 func TestDispatcher_SlowSenderDoesNotBlockEnqueue(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	sender := &blockingSender{started: started, release: release}
 	store := &configStoreStub{configs: map[string]common.UserConfig{
 		"user_a": {UserID: "user_a", Key: "settings", Value: map[string]any{
-			"ntfy_url_enabled": true,
-			"ntfy_url":         "https://ntfy.sh/alice",
+			"webhook_url_enabled": true,
+			"webhook_url":         "https://webhook.sh/alice",
 		}},
 	}}
-	svc := ntfynotify.NewWithOptions(store, sender, nil, testOptions(1, 2))
+	svc := webhooknotify.NewWithOptions(store, sender, nil, testOptions(1, 2))
 	t.Cleanup(func() {
 		close(release)
 		_ = svc.Close()
@@ -138,11 +158,11 @@ func TestDispatcher_QueueFullDropsWithoutBlocking(t *testing.T) {
 	sender := &blockingSender{started: started, release: release}
 	store := &configStoreStub{configs: map[string]common.UserConfig{
 		"user_a": {UserID: "user_a", Key: "settings", Value: map[string]any{
-			"ntfy_url_enabled": true,
-			"ntfy_url":         "https://ntfy.sh/alice",
+			"webhook_url_enabled": true,
+			"webhook_url":         "https://webhook.sh/alice",
 		}},
 	}}
-	svc := ntfynotify.NewWithOptions(store, sender, nil, testOptions(1, 1))
+	svc := webhooknotify.NewWithOptions(store, sender, nil, testOptions(1, 1))
 	t.Cleanup(func() {
 		close(release)
 		_ = svc.Close()
@@ -168,7 +188,7 @@ func TestDispatcher_QueueFullDropsWithoutBlocking(t *testing.T) {
 func TestDispatcher_CloseIdempotent(t *testing.T) {
 	sender := &recordingSender{}
 	store := &configStoreStub{configs: map[string]common.UserConfig{}}
-	svc := ntfynotify.NewWithOptions(store, sender, nil, testOptions(2, 2))
+	svc := webhooknotify.NewWithOptions(store, sender, nil, testOptions(2, 2))
 	if err := svc.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
@@ -182,7 +202,7 @@ func TestDispatcher_CloseIdempotent(t *testing.T) {
 func TestDispatcher_ConcurrentCloseSafe(t *testing.T) {
 	sender := &recordingSender{}
 	store := &configStoreStub{configs: map[string]common.UserConfig{}}
-	svc := ntfynotify.NewWithOptions(store, sender, nil, testOptions(2, 4))
+	svc := webhooknotify.NewWithOptions(store, sender, nil, testOptions(2, 4))
 
 	const n = 16
 	errs := make(chan error, n)
@@ -213,14 +233,14 @@ func TestDispatcher_CloseCancelsStuckSender(t *testing.T) {
 	sender := &blockingSender{started: started, release: make(chan struct{})}
 	store := &configStoreStub{configs: map[string]common.UserConfig{
 		"user_a": {UserID: "user_a", Key: "settings", Value: map[string]any{
-			"ntfy_url_enabled": true,
-			"ntfy_url":         "https://ntfy.sh/alice",
+			"webhook_url_enabled": true,
+			"webhook_url":         "https://webhook.sh/alice",
 		}},
 	}}
 	opts := testOptions(1, 2)
 	opts.CloseTimeout = 80 * time.Millisecond
 	opts.SendTimeout = 30 * time.Second // must not be the exit path; lifeCtx cancel is.
-	svc := ntfynotify.NewWithOptions(store, sender, nil, opts)
+	svc := webhooknotify.NewWithOptions(store, sender, nil, opts)
 
 	svc.NotifyWaiting(context.Background(), "user_a", "t1", "one")
 	select {
@@ -232,7 +252,7 @@ func TestDispatcher_CloseCancelsStuckSender(t *testing.T) {
 	begin := time.Now()
 	err := svc.Close()
 	elapsed := time.Since(begin)
-	if !errors.Is(err, ntfynotify.ErrCloseTimedOut) {
+	if !errors.Is(err, webhooknotify.ErrCloseTimedOut) {
 		t.Fatalf("expected close timeout, got %v", err)
 	}
 	// Drain window + join workers; must not wait for sendTimeout (30s).
@@ -251,14 +271,14 @@ func TestDispatcher_CloseDrainsQueuedThenCancelsBacklog(t *testing.T) {
 	sender := &ctxAwareSlowSender{started: &started, completed: &completed, hold: 5 * time.Second}
 	store := &configStoreStub{configs: map[string]common.UserConfig{
 		"user_a": {UserID: "user_a", Key: "settings", Value: map[string]any{
-			"ntfy_url_enabled": true,
-			"ntfy_url":         "https://ntfy.sh/alice",
+			"webhook_url_enabled": true,
+			"webhook_url":         "https://webhook.sh/alice",
 		}},
 	}}
 	opts := testOptions(1, 8)
 	opts.CloseTimeout = 100 * time.Millisecond
 	opts.SendTimeout = 10 * time.Second
-	svc := ntfynotify.NewWithOptions(store, sender, nil, opts)
+	svc := webhooknotify.NewWithOptions(store, sender, nil, opts)
 
 	// Fill queue with backlog while single worker is occupied by the first slow send.
 	for i := 0; i < 6; i++ {
@@ -267,7 +287,7 @@ func TestDispatcher_CloseDrainsQueuedThenCancelsBacklog(t *testing.T) {
 	waitFor(t, time.Second, func() bool { return started.Load() >= 1 })
 
 	err := svc.Close()
-	if !errors.Is(err, ntfynotify.ErrCloseTimedOut) {
+	if !errors.Is(err, webhooknotify.ErrCloseTimedOut) {
 		t.Fatalf("expected close timeout with backlog, got %v", err)
 	}
 	// Not all backlog items should complete as successful sends after cancel.
@@ -286,11 +306,11 @@ func TestDispatcher_CloseAfterEnqueueDoesNotPanic(t *testing.T) {
 	sender := &recordingSender{}
 	store := &configStoreStub{configs: map[string]common.UserConfig{
 		"user_a": {UserID: "user_a", Key: "settings", Value: map[string]any{
-			"ntfy_url_enabled": true,
-			"ntfy_url":         "https://ntfy.sh/alice",
+			"webhook_url_enabled": true,
+			"webhook_url":         "https://webhook.sh/alice",
 		}},
 	}}
-	svc := ntfynotify.NewWithOptions(store, sender, nil, testOptions(2, 16))
+	svc := webhooknotify.NewWithOptions(store, sender, nil, testOptions(2, 16))
 
 	var wg sync.WaitGroup
 	for i := 0; i < 32; i++ {
@@ -316,7 +336,7 @@ func TestDispatcher_CloseAfterEnqueueDoesNotPanic(t *testing.T) {
 func TestDispatcher_NotFoundConfigDoesNotSend(t *testing.T) {
 	sender := &recordingSender{}
 	store := &configStoreStub{err: common.ErrNotFound}
-	svc := ntfynotify.NewWithOptions(store, sender, nil, testOptions(1, 2))
+	svc := webhooknotify.NewWithOptions(store, sender, nil, testOptions(1, 2))
 	t.Cleanup(func() { _ = svc.Close() })
 	svc.NotifyWaiting(context.Background(), "user_a", "t", "x")
 	time.Sleep(50 * time.Millisecond)
@@ -327,10 +347,10 @@ func TestDispatcher_NotFoundConfigDoesNotSend(t *testing.T) {
 
 type recordingSender struct {
 	mu       sync.Mutex
-	messages []ntfy.Message
+	messages []webhook.Message
 }
 
-func (s *recordingSender) Send(_ context.Context, message ntfy.Message) error {
+func (s *recordingSender) Send(_ context.Context, message webhook.Message) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.messages = append(s.messages, message)
@@ -343,11 +363,11 @@ func (s *recordingSender) count() int {
 	return len(s.messages)
 }
 
-func (s *recordingSender) last() ntfy.Message {
+func (s *recordingSender) last() webhook.Message {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.messages) == 0 {
-		return ntfy.Message{}
+		return webhook.Message{}
 	}
 	return s.messages[len(s.messages)-1]
 }
@@ -358,7 +378,7 @@ type blockingSender struct {
 	once    sync.Once
 }
 
-func (s *blockingSender) Send(ctx context.Context, message ntfy.Message) error {
+func (s *blockingSender) Send(ctx context.Context, message webhook.Message) error {
 	s.once.Do(func() {
 		select {
 		case s.started <- struct{}{}:
@@ -380,7 +400,7 @@ type ctxAwareSlowSender struct {
 	hold      time.Duration
 }
 
-func (s *ctxAwareSlowSender) Send(ctx context.Context, message ntfy.Message) error {
+func (s *ctxAwareSlowSender) Send(ctx context.Context, message webhook.Message) error {
 	s.started.Add(1)
 	timer := time.NewTimer(s.hold)
 	defer timer.Stop()

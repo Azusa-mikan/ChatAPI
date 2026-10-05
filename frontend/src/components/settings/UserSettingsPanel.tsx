@@ -14,8 +14,9 @@ type UserSettingsPanelProps = {
 }
 
 const DEFAULT_CONFIG: UserConfig = {
-  ntfy_url_enabled: false,
-  ntfy_url: '',
+  webhook_url_enabled: false,
+  webhook_url: '',
+  webhook_body_template: '',
   messages_per_minute_limit_enabled: false,
   messages_per_minute_limit: 0,
 }
@@ -37,8 +38,9 @@ export function UserSettingsPanel({ open, onClose, totpEnabled, onTotpRefresh }:
         const data = await requestJson<{ ok: boolean } & UserConfig>('/api/user/config')
         if (!active) return
         const nextConfig: UserConfig = {
-          ntfy_url_enabled: Boolean(data.ntfy_url_enabled),
-          ntfy_url: String(data.ntfy_url ?? ''),
+          webhook_url_enabled: Boolean(data.webhook_url_enabled),
+          webhook_url: String(data.webhook_url ?? ''),
+          webhook_body_template: String(data.webhook_body_template ?? ''),
           messages_per_minute_limit_enabled: Boolean(data.messages_per_minute_limit_enabled),
           messages_per_minute_limit: Number(data.messages_per_minute_limit ?? 0),
         }
@@ -56,7 +58,7 @@ export function UserSettingsPanel({ open, onClose, totpEnabled, onTotpRefresh }:
   }, [open])
 
   const dirtyState = useMemo(() => ({
-    ntfy_url: config.ntfy_url_enabled !== savedConfig.ntfy_url_enabled || config.ntfy_url !== savedConfig.ntfy_url,
+    webhook_url: config.webhook_url_enabled !== savedConfig.webhook_url_enabled || config.webhook_url !== savedConfig.webhook_url || config.webhook_body_template !== savedConfig.webhook_body_template,
     messages_per_minute_limit:
       config.messages_per_minute_limit_enabled !== savedConfig.messages_per_minute_limit_enabled ||
       config.messages_per_minute_limit !== savedConfig.messages_per_minute_limit,
@@ -76,8 +78,9 @@ export function UserSettingsPanel({ open, onClose, totpEnabled, onTotpRefresh }:
         body: JSON.stringify(config),
       })
       const nextConfig: UserConfig = {
-        ntfy_url_enabled: Boolean(data.ntfy_url_enabled),
-        ntfy_url: String(data.ntfy_url ?? ''),
+        webhook_url_enabled: Boolean(data.webhook_url_enabled),
+        webhook_url: String(data.webhook_url ?? ''),
+        webhook_body_template: String(data.webhook_body_template ?? ''),
         messages_per_minute_limit_enabled: Boolean(data.messages_per_minute_limit_enabled),
         messages_per_minute_limit: Number(data.messages_per_minute_limit ?? 0),
       }
@@ -114,34 +117,39 @@ export function UserSettingsPanel({ open, onClose, totpEnabled, onTotpRefresh }:
   return (
     <div className="user-settings-panel">
       <div className="system-settings-rows">
-        <div className="system-settings-row">
-          <Typography.Text className="system-settings-row-title">ntfy 推送地址</Typography.Text>
-          <div className="system-settings-row-body">
-            <Typography.Text
-              className={`system-settings-row-help ${
-                config.ntfy_url_enabled ? 'system-settings-row-help-hidden' : 'system-settings-row-help-visible'
-              }`}
-            >
-              开启后，收到用户消息时会向这里发送推送。
-            </Typography.Text>
-            <div
-              className={`system-settings-row-field ${
-                config.ntfy_url_enabled ? 'system-settings-row-field-visible' : 'system-settings-row-field-hidden'
-              }`}
-            >
-              <Input
-                value={config.ntfy_url}
-                placeholder="https://ntfy.sh/your-topic"
-                allowClear
-                onChange={(event) => updateSection('ntfy_url', event.target.value)}
-              />
-            </div>
+        <div className="system-settings-row system-settings-row-stacked">
+          <Typography.Text className="system-settings-row-title">Webhook 推送地址</Typography.Text>
+          <div className="system-settings-row-body system-settings-row-body-stacked">
+            {config.webhook_url_enabled ? (
+              <div className="webhook-field-stack">
+                <Input
+                  value={config.webhook_url}
+                  placeholder="https://example.com/webhook"
+                  allowClear
+                  onChange={(event) => updateSection('webhook_url', event.target.value)}
+                />
+                <Input.TextArea
+                  value={config.webhook_body_template}
+                  placeholder={'请求体模板（留空则发送默认的 {"title","text"}）'}
+                  autoSize={{ minRows: 3, maxRows: 6 }}
+                  onChange={(event) => updateSection('webhook_body_template', event.target.value)}
+                />
+                <Typography.Text className="webhook-field-hint">
+                  可用占位符：{'{{title}}'}、{'{{text}}'}（替换时自动做 JSON 转义）。例如：
+                  {'{"msg_type":"text","content":{"text":"{{title}}\\n{{text}}"}}'}
+                </Typography.Text>
+              </div>
+            ) : (
+              <Typography.Text className="webhook-row-help">
+                开启后，收到用户消息时会向该 Webhook 地址发送 JSON 推送（默认 {'{"title","text"}'}）。
+              </Typography.Text>
+            )}
           </div>
           <Switch
-            checked={config.ntfy_url_enabled}
+            checked={config.webhook_url_enabled}
             checkedChildren="启用"
             unCheckedChildren="关闭"
-            onChange={(enabled) => updateSection('ntfy_url_enabled', enabled)}
+            onChange={(enabled) => updateSection('webhook_url_enabled', enabled)}
           />
         </div>
 

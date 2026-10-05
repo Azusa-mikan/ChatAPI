@@ -228,7 +228,7 @@ func (a *App) Close() {
 		a.workerWG.Wait()
 		if a.notifications != nil {
 			if err := a.notifications.Close(); err != nil {
-				a.logger.Warn("ntfy notify service close failed", zap.Error(err))
+				a.logger.Warn("webhook notify service close failed", zap.Error(err))
 			}
 		}
 		if a.storeClose != nil {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/zyf2007/ChatAPI/internal/ops/observability/logging"
 	"github.com/zyf2007/ChatAPI/internal/platform/urlsafety"
+	platformwebhook "github.com/zyf2007/ChatAPI/internal/platform/webhook"
 	"github.com/zyf2007/ChatAPI/internal/repository/chat"
 	"github.com/zyf2007/ChatAPI/internal/repository/common"
 	configrepo "github.com/zyf2007/ChatAPI/internal/repository/config"
@@ -15,8 +16,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// ErrInvalidNtfyConfig is returned when enabled ntfy settings fail shared URL safety checks.
-var ErrInvalidNtfyConfig = errors.New("invalid ntfy config")
+// ErrInvalidWebhookConfig is returned when enabled webhook settings fail shared URL safety checks.
+var ErrInvalidWebhookConfig = errors.New("invalid webhook config")
 
 type Deps struct {
 	Configs configrepo.Store
@@ -55,7 +56,7 @@ func (s *Service) GetUserConfig(ctx context.Context, userID string) (common.User
 
 func (s *Service) UpdateUserConfig(ctx context.Context, userID string, value map[string]any) (common.UserConfig, error) {
 	cloned := cloneMap(value)
-	if err := s.validateNtfySettings(ctx, cloned); err != nil {
+	if err := s.validateWebhookSettings(ctx, cloned); err != nil {
 		return common.UserConfig{}, err
 	}
 	item, err := s.configs.SetUserConfig(ctx, common.SetUserConfigInput{
@@ -69,18 +70,21 @@ func (s *Service) UpdateUserConfig(ctx context.Context, userID string, value map
 	return item, err
 }
 
-// validateNtfySettings enforces:
+// validateWebhookSettings enforces:
 //   - enabled=true requires a non-empty URL that passes the shared safety policy (syntax + DNS + restricted IP).
 //   - enabled=false allows any syntactically valid URL (including empty) so users can keep drafts while disabled;
 //     private/restricted destinations are rejected even when disabled to avoid storing known-unsafe endpoints.
 //
 // This intentionally does not treat "disabled private URL" as a general allow-private capability.
-func (s *Service) validateNtfySettings(ctx context.Context, value map[string]any) error {
+func (s *Service) validateWebhookSettings(ctx context.Context, value map[string]any) error {
 	if value == nil {
 		return nil
 	}
-	enabled := asBool(value["ntfy_url_enabled"])
-	rawURL, hasURL := value["ntfy_url"]
+	if err := validateWebhookBodyTemplate(value["webhook_body_template"]); err != nil {
+		return err
+	}
+	enabled := asBool(value["webhook_url_enabled"])
+	rawURL, hasURL := value["webhook_url"]
 	if !hasURL && !enabled {
 		return nil
 	}
@@ -95,21 +99,21 @@ func (s *Service) validateNtfySettings(ctx context.Context, value map[string]any
 		if urlText == "" {
 			return nil
 		}
-		// Disabled drafts still must be syntactically valid ntfy URLs.
+		// Disabled drafts still must be syntactically valid webhook URLs.
 		// Restricted destinations are rejected so we never persist known-unsafe endpoints.
-		parsed, syntax := urlsafety.ParseNtfyURL(urlText)
+		parsed, syntax := urlsafety.ParseWebhookURL(urlText)
 		if !syntax.OK {
-			return fmt.Errorf("%w: %s", ErrInvalidNtfyConfig, syntax.Reason)
+			return fmt.Errorf("%w: %s", ErrInvalidWebhookConfig, syntax.Reason)
 		}
 		if parsed == nil {
 			return nil
 		}
-		safety := urlsafety.AssessNtfyHost(ctx, parsed.Hostname, false, s.lookup)
+		safety := urlsafety.AssessWebhookHost(ctx, parsed.Hostname, false, s.lookup)
 		if !safety.OK {
 			// For disabled saves, DNS resolution failures are soft: the URL is not active.
 			// Only hard-reject when we positively identify a restricted destination or bad syntax above.
 			if safety.IsPrivate {
-				return fmt.Errorf("%w: %s", ErrInvalidNtfyConfig, safety.Reason)
+				return fmt.Errorf("%w: %s", ErrInvalidWebhookConfig, safety.Reason)
 			}
 			// Literal private IPs are IsPrivate; hostname DNS failures are not — allow draft keep.
 			return nil
@@ -117,11 +121,27 @@ func (s *Service) validateNtfySettings(ctx context.Context, value map[string]any
 		return nil
 	}
 	if urlText == "" {
-		return fmt.Errorf("%w: 启用 ntfy 时必须填写地址", ErrInvalidNtfyConfig)
+		return fmt.Errorf("%w: 启用 webhook 时必须填写地址", ErrInvalidWebhookConfig)
 	}
-	safety := urlsafety.ValidateNtfyURLContext(ctx, urlText, false, s.lookup)
+	safety := urlsafety.ValidateWebhookURLContext(ctx, urlText, false, s.lookup)
 	if !safety.OK {
-		return fmt.Errorf("%w: %s", ErrInvalidNtfyConfig, safety.Reason)
+		return fmt.Errorf("%w: %s", ErrInvalidWebhookConfig, safety.Reason)
+	}
+	return nil
+}
+
+// validateWebhookBodyTemplate rejects a custom body template that cannot render
+// to valid JSON. Empty is allowed and means "use the default {"title","text"}" body.
+func validateWebhookBodyTemplate(raw any) error {
+	if raw == nil {
+		return nil
+	}
+	template := strings.TrimSpace(fmt.Sprint(raw))
+	if template == "" || template == "<nil>" {
+		return nil
+	}
+	if err := platformwebhook.ValidateBodyTemplate(template); err != nil {
+		return fmt.Errorf("%w: webhook 请求体模板不是合法 JSON", ErrInvalidWebhookConfig)
 	}
 	return nil
 }

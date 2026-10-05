@@ -17,7 +17,7 @@ func TestSafeDialer_PublicIPAllowed(t *testing.T) {
 	var dialed atomic.Value
 	dialer := &SafeDialer{
 		Lookup: func(ctx context.Context, host string) ([]netip.Addr, error) {
-			if host != "ntfy.example" {
+			if host != "webhook.example" {
 				t.Fatalf("unexpected host: %s", host)
 			}
 			// Use a real public IP (not TEST-NET); TEST-NET is restricted.
@@ -28,7 +28,7 @@ func TestSafeDialer_PublicIPAllowed(t *testing.T) {
 			return nil, errors.New("stop after dial target recorded")
 		},
 	}
-	_, err := dialer.DialContext(context.Background(), "tcp", "ntfy.example:443")
+	_, err := dialer.DialContext(context.Background(), "tcp", "webhook.example:443")
 	if err == nil {
 		t.Fatal("expected dial error from stub")
 	}
@@ -81,7 +81,7 @@ func TestSafeDialer_RejectsResolutionDriftToPrivate(t *testing.T) {
 			return nil, nil
 		},
 	}
-	_, err := dialer.DialContext(context.Background(), "tcp", "ntfy.example:80")
+	_, err := dialer.DialContext(context.Background(), "tcp", "webhook.example:80")
 	if !errors.Is(err, ErrRestrictedAddress) {
 		t.Fatalf("expected restricted after drift, got %v", err)
 	}

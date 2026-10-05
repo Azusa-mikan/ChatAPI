@@ -1,4 +1,4 @@
-package ntfy
+package webhook
 
 import (
 	"context"
@@ -10,8 +10,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/zyf2007/ChatAPI/internal/ops/observability/logging"
-	"github.com/zyf2007/ChatAPI/internal/platform/ntfy"
 	"github.com/zyf2007/ChatAPI/internal/platform/urlsafety"
+	"github.com/zyf2007/ChatAPI/internal/platform/webhook"
 	"github.com/zyf2007/ChatAPI/internal/repository/common"
 	configrepo "github.com/zyf2007/ChatAPI/internal/repository/config"
 	"go.uber.org/zap"
@@ -28,11 +28,11 @@ const (
 )
 
 // ErrCloseTimedOut is returned when Close had to cancel in-flight work after the drain window.
-var ErrCloseTimedOut = errors.New("ntfy service close timed out; canceled in-flight work")
+var ErrCloseTimedOut = errors.New("webhook service close timed out; canceled in-flight work")
 
-// Sender posts one ntfy message. Tests inject stubs; production uses platform/ntfy.Client.
+// Sender posts one webhook message. Tests inject stubs; production uses platform/webhook.Client.
 type Sender interface {
-	Send(ctx context.Context, message ntfy.Message) error
+	Send(ctx context.Context, message webhook.Message) error
 }
 
 // Options configures the bounded notification dispatcher.
@@ -48,7 +48,7 @@ type Options struct {
 	Lookup urlsafety.HostLookup
 }
 
-// Service sends user-configured ntfy notifications for pending chat turns.
+// Service sends user-configured webhook notifications for pending chat turns.
 // NotifyWaiting only enqueues work; workers perform config lookup, safety checks, and HTTP.
 //
 // Lifecycle (graceful but bounded):
@@ -94,7 +94,7 @@ func New(configs configrepo.Store, sender Sender, logger *zap.Logger) *Service {
 
 func NewWithOptions(configs configrepo.Store, sender Sender, logger *zap.Logger, opts Options) *Service {
 	if sender == nil {
-		sender = ntfy.NewClient(nil)
+		sender = webhook.NewClient(nil)
 	}
 	workers := opts.Workers
 	if workers <= 0 {
@@ -155,7 +155,7 @@ func (s *Service) NotifyWaiting(ctx context.Context, ownerID string, title strin
 	if s.closed {
 		logging.BindContext(s.logger, ctx,
 			zap.String("owner.id", ownerID),
-		).Debug("ntfy notify skipped: service closed")
+		).Debug("webhook notify skipped: service closed")
 		return
 	}
 	select {
@@ -164,7 +164,7 @@ func (s *Service) NotifyWaiting(ctx context.Context, ownerID string, title strin
 		logging.BindContext(s.logger, ctx,
 			zap.String("owner.id", ownerID),
 			zap.Int("queue.capacity", cap(s.jobs)),
-		).Warn("ntfy notify dropped: queue full")
+		).Warn("webhook notify dropped: queue full")
 	}
 }
 
@@ -236,7 +236,7 @@ func (s *Service) process(job notifyJob) {
 		return
 	}
 
-	url, enabled, err := s.resolveNtfyTarget(s.lifeCtx, job.ownerID)
+	url, enabled, bodyTemplate, err := s.resolveWebhookTarget(s.lifeCtx, job.ownerID)
 	if err != nil {
 		if s.lifeCtx.Err() != nil {
 			return
@@ -244,7 +244,7 @@ func (s *Service) process(job notifyJob) {
 		logging.BindContext(s.logger, s.lifeCtx,
 			zap.String("owner.id", job.ownerID),
 			zap.Error(err),
-		).Debug("ntfy target resolve skipped")
+		).Debug("webhook target resolve skipped")
 		return
 	}
 	if !enabled || url == "" {
@@ -254,15 +254,15 @@ func (s *Service) process(job notifyJob) {
 		return
 	}
 
-	safety := urlsafety.ValidateNtfyURLContext(s.lifeCtx, url, false, s.lookup)
+	safety := urlsafety.ValidateWebhookURLContext(s.lifeCtx, url, false, s.lookup)
 	if !safety.OK {
 		if s.lifeCtx.Err() != nil {
 			return
 		}
 		logging.BindContext(s.logger, s.lifeCtx,
 			zap.String("owner.id", job.ownerID),
-			zap.String("ntfy.reason", safety.Reason),
-		).Warn("ntfy url rejected")
+			zap.String("webhook.reason", safety.Reason),
+		).Warn("webhook url rejected")
 		return
 	}
 
@@ -284,10 +284,11 @@ func (s *Service) process(job notifyJob) {
 	sendCtx, cancel := context.WithTimeout(s.lifeCtx, s.sendTimeout)
 	defer cancel()
 
-	if err := s.sender.Send(sendCtx, ntfy.Message{
-		URL:   url,
-		Title: msgTitle,
-		Text:  body,
+	if err := s.sender.Send(sendCtx, webhook.Message{
+		URL:          url,
+		Title:        msgTitle,
+		Text:         body,
+		BodyTemplate: bodyTemplate,
 	}); err != nil {
 		if s.lifeCtx.Err() != nil {
 			return
@@ -295,37 +296,43 @@ func (s *Service) process(job notifyJob) {
 		logging.BindContext(s.logger, s.lifeCtx,
 			zap.String("owner.id", job.ownerID),
 			zap.Error(err),
-		).Warn("ntfy send failed")
+		).Warn("webhook send failed")
 		return
 	}
 
 	logging.BindContext(s.logger, s.lifeCtx,
 		zap.String("owner.id", job.ownerID),
-	).Info("ntfy notification sent")
+	).Info("webhook notification sent")
 }
 
-func (s *Service) resolveNtfyTarget(ctx context.Context, ownerID string) (url string, enabled bool, err error) {
+// resolveWebhookTarget returns the configured webhook URL, enabled flag, and
+// optional JSON body template (empty means the default {"title","text"} body).
+func (s *Service) resolveWebhookTarget(ctx context.Context, ownerID string) (url string, enabled bool, bodyTemplate string, err error) {
 	item, err := s.configs.GetUserConfig(ctx, ownerID, userSettingsKey)
 	if err != nil {
 		if errors.Is(err, common.ErrNotFound) {
-			return "", false, nil
+			return "", false, "", nil
 		}
-		return "", false, err
+		return "", false, "", err
 	}
 	value := item.Value
 	if value == nil {
-		return "", false, nil
+		return "", false, "", nil
 	}
 
-	enabled = asBool(value["ntfy_url_enabled"])
-	url = strings.TrimSpace(fmt.Sprint(value["ntfy_url"]))
+	enabled = asBool(value["webhook_url_enabled"])
+	url = strings.TrimSpace(fmt.Sprint(value["webhook_url"]))
 	if url == "<nil>" {
 		url = ""
 	}
 	if !enabled || url == "" {
-		return "", false, nil
+		return "", false, "", nil
 	}
-	return url, true, nil
+	bodyTemplate = strings.TrimSpace(fmt.Sprint(value["webhook_body_template"]))
+	if bodyTemplate == "<nil>" {
+		bodyTemplate = ""
+	}
+	return url, true, bodyTemplate, nil
 }
 
 func asBool(value any) bool {

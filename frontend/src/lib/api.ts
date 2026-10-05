@@ -12,6 +12,26 @@ function resolveRequestUrl(url: string): string {
   return `${normalizedBase}${normalizedPath}`
 }
 
+// extractErrorMessage mirrors the backend's error envelopes while staying
+// tolerant of the plain-text bodies produced by http.Error. It must never
+// surface an empty message, so it falls back to the raw body text and finally
+// to a generic message.
+function extractErrorMessage(body: unknown, rawText: string): string {
+  if (body && typeof body === 'object') {
+    const record = body as Record<string, unknown>
+    const nested = record.error
+    if (nested && typeof nested === 'object') {
+      const message = (nested as Record<string, unknown>).message
+      if (typeof message === 'string' && message) return message
+    } else if (typeof nested === 'string' && nested) {
+      return nested
+    }
+    if (typeof record.message === 'string' && record.message) return record.message
+  }
+  const text = rawText.trim()
+  return text || '请求失败'
+}
+
 export async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   let response: Response
   try {
@@ -27,13 +47,21 @@ export async function requestJson<T>(url: string, init?: RequestInit): Promise<T
     throw new Error('无法连接到后端')
   }
 
-  const body = await response.json().catch(() => null)
+  // Read the raw body once. Error responses may be JSON envelopes or plain
+  // text (the HTTP layer uses http.Error), and response.json() consumes the
+  // stream, so we parse it ourselves to keep the text fallback available.
+  const raw = await response.text().catch(() => '')
+  let body: unknown = null
+  if (raw) {
+    try {
+      body = JSON.parse(raw)
+    } catch {
+      body = null
+    }
+  }
+
   if (!response.ok) {
-    const fallback =
-      body?.error?.message ?? body?.error ?? body?.message ?? '请求失败'
-    const errorMessage = typeof fallback === 'string' ? fallback : '请求失败'
-    const error: RequestError = new Error(errorMessage)
-    // Attach additional error details from the response body
+    const error: RequestError = new Error(extractErrorMessage(body, raw))
     if (body && typeof body === 'object') {
       error.responseBody = body
     }
@@ -53,10 +81,17 @@ export async function requestFormJson<T>(url: string, form: FormData): Promise<T
 	} catch {
 		throw new Error('无法连接到后端')
 	}
-	const body = await response.json().catch(() => null)
+	const raw = await response.text().catch(() => '')
+	let body: unknown = null
+	if (raw) {
+		try {
+			body = JSON.parse(raw)
+		} catch {
+			body = null
+		}
+	}
 	if (!response.ok) {
-		const fallback = body?.error?.message ?? body?.error ?? body?.message ?? '请求失败'
-		throw new Error(typeof fallback === 'string' ? fallback : '请求失败')
+		throw new Error(extractErrorMessage(body, raw))
 	}
 	return body as T
 }
